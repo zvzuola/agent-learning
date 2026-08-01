@@ -174,7 +174,7 @@ export class CodingAgent {
     if (!threadId) throw new TypeError('threadId is required');
     const messages = await this.checkpointStore.load(threadId);
     const result = await this.run(input, { messages, signal });
-    if (result.status !== 'model_error') {
+    if (result.status === 'completed') {
       await this.checkpointStore.save(threadId, result.messages);
     }
     return result;

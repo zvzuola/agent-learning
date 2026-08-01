@@ -107,6 +107,29 @@ test('returns validation failure to the model without calling the dependency', a
   assert.match(toolResult.content, /ZodError/);
 });
 
+test('rejects tool input fields not declared by the public schema', async () => {
+  const { agent, client, fileReads } = setup([
+    message({
+      stopReason: 'tool_use',
+      content: [{
+        type: 'tool_use',
+        id: 'extra_1',
+        name: 'read_project_file',
+        input: { path: 'package.json', unexpected: true },
+      }],
+    }),
+    message({ content: [{ type: 'text', text: 'The extra field is not allowed.' }] }),
+  ]);
+
+  const result = await agent.run('Read with an extra field');
+
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(fileReads, []);
+  const toolResult = client.calls[1].params.messages.at(-1).content[0];
+  assert.equal(toolResult.is_error, true);
+  assert.match(toolResult.content, /unrecognized_keys/);
+});
+
 test('does not execute tools after the tool-call budget is exhausted', async () => {
   const { agent, fileReads } = setup([
     message({
@@ -142,9 +165,24 @@ test('does not persist malformed SDK responses', async () => {
   const result = await agent.runThread('thread-invalid', 'Hi');
 
   assert.equal(result.status, 'invalid_response');
-  assert.deepEqual(await checkpointStore.load('thread-invalid'), [
-    { role: 'user', content: 'Hi' },
-  ]);
+  assert.deepEqual(await checkpointStore.load('thread-invalid'), []);
+});
+
+test('does not checkpoint a turn stopped by a runtime budget', async () => {
+  const { agent, checkpointStore } = setup([
+    message({
+      stopReason: 'tool_use',
+      content: [
+        { type: 'tool_use', id: 'a', name: 'read_project_file', input: { path: 'package.json' } },
+        { type: 'tool_use', id: 'b', name: 'read_project_file', input: { path: 'README.md' } },
+      ],
+    }),
+  ], { maxToolCalls: 1 });
+
+  const result = await agent.runThread('thread-budget', 'Inspect forever');
+
+  assert.equal(result.status, 'max_tool_calls');
+  assert.deepEqual(await checkpointStore.load('thread-budget'), []);
 });
 
 test('exposes non-success stop reasons instead of pretending completion', async () => {

@@ -7,7 +7,7 @@ import { z } from 'zod';
 export function createReadProjectFileTool(projectReader) {
   const schema = z.object({
     path: z.string().min(1),
-  });
+  }).strict();
 
   return {
     name: 'read_project_file',

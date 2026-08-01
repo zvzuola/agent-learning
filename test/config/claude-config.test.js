@@ -80,7 +80,7 @@ test('explicit options and process environment override the settings file', asyn
 });
 
 test('resolves the default settings path from the user home', () => {
-  const homeDirectory = path.join('C:\\', 'Users', 'learner');
+  const homeDirectory = path.join(tmpdir(), 'learner');
   const settingsPath = getClaudeSettingsPath({
     env: {},
     homeDirectory,

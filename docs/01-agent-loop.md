@@ -45,7 +45,7 @@ CodingAgent
 7. 模型给出最终回答，Agent 正常结束
 ```
 
-关键不变量：每个工具请求都有对应结果；失败状态不会伪装成最终成功；保存的状态必须足以恢复后续决策。
+关键不变量：每个已执行的工具请求都有对应结果；失败状态不会伪装成最终成功；只有完整结束的轮次才写入 Checkpoint。
 
 ## 4. 工具契约与双重校验
 
@@ -105,7 +105,7 @@ tools.register({
 
 ## 8. Checkpoint 与线程
 
-`runThread(threadId, input)` 从 `CheckpointStore` 恢复历史，并在运行后保存合法状态。相同线程可以继续任务，不同线程互相隔离。
+`runThread(threadId, input)` 从 `CheckpointStore` 恢复历史，并且只在状态为 `completed` 时原子地保存整个轮次。模型错误、无效响应、预算耗尽和其他非正常停止都保留在本次返回值与事件中，不污染已提交的线程历史。相同线程可以继续任务，不同线程互相隔离。
 
 当前 `InMemoryCheckpointStore` 只适合本地学习和测试。生产环境需要数据库实现，并补充：
 
@@ -131,7 +131,7 @@ npm test
 npm run lesson:01 -- "Read package.json and summarize the project setup"
 ```
 
-Lesson 示例始终使用真实 Anthropic Client，并自动读取 `~/.claude/settings.json` 中的认证、服务地址和模型配置，无需在项目中设置环境变量。Fake Client 仅存在于自动化测试中，用于稳定验证 Agent 的分支、失败和副作用。
+课程要求 Lesson 示例使用真实 Anthropic Client，以便观察模型实际产生的决策、工具参数、观察结果、Token 用量和停止原因。示例自动读取 `~/.claude/settings.json` 中的认证、服务地址和模型配置，无需在项目中设置环境变量。真实模型输出具有随机性且可能产生调用费用；Fake Client 仅用于自动化测试，稳定验证 Agent 的分支、失败和副作用。
 
 ## 10. 动手实验
 

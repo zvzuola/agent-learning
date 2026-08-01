@@ -1,4 +1,4 @@
-import { open, stat } from 'node:fs/promises';
+import { open, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 const DEFAULT_MAX_BYTES = 128 * 1024;
@@ -27,12 +27,19 @@ export function createProjectReader({
       }
 
       const target = path.resolve(root, relativePath);
-      const relative = path.relative(root, target);
-      if (relative.startsWith('..') || path.isAbsolute(relative)) {
+      if (!isInside(root, target)) {
         throw new Error('Path must stay inside the project workspace');
       }
 
-      const metadata = await stat(target);
+      const [canonicalRoot, canonicalTarget] = await Promise.all([
+        realpath(root),
+        realpath(target),
+      ]);
+      if (!isInside(canonicalRoot, canonicalTarget)) {
+        throw new Error('Path must stay inside the project workspace');
+      }
+
+      const metadata = await stat(canonicalTarget);
       if (!metadata.isFile()) {
         throw new Error('Path must point to a regular file');
       }
@@ -40,7 +47,7 @@ export function createProjectReader({
         throw new Error(`File exceeds the ${maxBytes}-byte reading limit`);
       }
 
-      const file = await open(target, 'r');
+      const file = await open(canonicalTarget, 'r');
       try {
         return await file.readFile({ encoding: 'utf8' });
       } finally {
@@ -48,4 +55,9 @@ export function createProjectReader({
       }
     },
   };
+}
+
+function isInside(root, target) {
+  const relative = path.relative(root, target);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
