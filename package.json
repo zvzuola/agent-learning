@@ -1,0 +1,19 @@
+{
+  "name": "agent-learning",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Production-grade AI agent learning project in JavaScript",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "lesson:01": "node examples/lesson-01-agent-loop.js",
+    "test": "node --test",
+    "test:watch": "node --test --watch"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
+    "zod": "^4.4.3"
+  }
+}
