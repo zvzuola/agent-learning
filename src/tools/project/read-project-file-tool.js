@@ -25,6 +25,10 @@ export function createReadProjectFileTool(projectReader) {
       additionalProperties: false,
     },
     validate: (input) => schema.parse(input),
+    policy: {
+      timeoutMs: 2_000,
+      maxResultBytes: 128 * 1024,
+    },
     handler: async ({ path }) => ({
       path,
       content: await projectReader.readTextFile(path),

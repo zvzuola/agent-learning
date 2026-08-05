@@ -3,7 +3,7 @@
 ## 第一阶段：可控单 Agent
 
 1. [Lesson 01：Agent 核心循环](01-agent-loop.md)
-2. Lesson 02：生产级工具工程（待实现）
+2. [Lesson 02：生产级工具工程](02-production-tools.md)
 3. Lesson 03：状态与持久 Checkpoint（待实现）
 4. Lesson 04：上下文管理与运行预算（待实现）
 

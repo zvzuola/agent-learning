@@ -24,6 +24,12 @@ npm install
 npm test
 ```
 
+Lesson 02 的工具工程示例：
+
+```powershell
+npm run lesson:02
+```
+
 Lesson 01 会自动读取系统 Claude 配置：
 
 - 默认路径：`~/.claude/settings.json`

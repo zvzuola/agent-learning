@@ -9,6 +9,7 @@
   },
   "scripts": {
     "lesson:01": "node examples/lesson-01-agent-loop.js",
+    "lesson:02": "node examples/lesson-02-production-tools.js",
     "test": "node --test",
     "test:watch": "node --test --watch"
   },

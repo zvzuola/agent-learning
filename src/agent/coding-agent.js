@@ -76,15 +76,20 @@ export class CodingAgent {
     await this.#emit(createEvent(runId, 0, 'run.started', { input }));
 
     for (let step = 1; step <= this.config.maxSteps; step += 1) {
+      const modelInput = {
+        model: this.config.model,
+        max_tokens: this.config.maxTokens,
+        ...(this.config.system ? { system: this.config.system } : {}),
+        messages: structuredClone(messages),
+        tools: this.tools.definitions(),
+      };
+      await this.#emit(createEvent(runId, step, 'model.started', {
+        input: structuredClone(modelInput),
+      }));
+
       try {
         lastResponse = await this.client.messages.create(
-          {
-            model: this.config.model,
-            max_tokens: this.config.maxTokens,
-            ...(this.config.system ? { system: this.config.system } : {}),
-            messages,
-            tools: this.tools.definitions(),
-          },
+          modelInput,
           options.signal ? { signal: options.signal } : undefined,
         );
       } catch (error) {
@@ -96,6 +101,16 @@ export class CodingAgent {
         return makeResult(runId, 'model_error', messages, step, null, message);
       }
 
+      const responseContent = Array.isArray(lastResponse?.content) ? lastResponse.content : [];
+      const toolUses = responseContent.filter((block) => block.type === 'tool_use');
+      await this.#emit(createEvent(runId, step, 'model.completed', {
+        stopReason: lastResponse?.stop_reason ?? null,
+        toolCalls: toolUses.length,
+        inputTokens: lastResponse?.usage?.input_tokens ?? null,
+        outputTokens: lastResponse?.usage?.output_tokens ?? null,
+        output: structuredClone(lastResponse),
+      }));
+
       if (!Array.isArray(lastResponse?.content) || !lastResponse.stop_reason) {
         const error = 'Model SDK returned an invalid response';
         await this.#emit(createEvent(runId, step, 'run.failed', {
@@ -104,14 +119,6 @@ export class CodingAgent {
         }));
         return makeResult(runId, 'invalid_response', messages, step, null, error);
       }
-
-      const toolUses = lastResponse.content.filter((block) => block.type === 'tool_use');
-      await this.#emit(createEvent(runId, step, 'model.completed', {
-        stopReason: lastResponse.stop_reason,
-        toolCalls: toolUses.length,
-        inputTokens: lastResponse.usage?.input_tokens ?? null,
-        outputTokens: lastResponse.usage?.output_tokens ?? null,
-      }));
 
       if (lastResponse.stop_reason === 'tool_use' && toolUses.length > 0) {
         if (toolCalls + toolUses.length > this.config.maxToolCalls) {
@@ -128,14 +135,21 @@ export class CodingAgent {
             id: toolUse.id,
             name: toolUse.name,
             input: toolUse.input,
+          }, {
+            signal: options.signal,
+            runId,
           });
           toolCalls += 1;
           await this.#emit(createEvent(runId, step, 'tool.completed', {
             name: toolUse.name,
             toolUseId: toolUse.id,
             isError: result.is_error === true,
+            errorCode: result.metadata?.errorCode ?? null,
+            retryable: result.metadata?.retryable ?? null,
+            replayed: result.metadata?.replayed ?? false,
+            durationMs: result.metadata?.durationMs ?? null,
           }));
-          return result;
+          return toModelToolResult(result);
         }));
         messages.push({ role: 'user', content: results });
         continue;
@@ -199,6 +213,15 @@ function makeResult(runId, status, messages, steps, response = null, error = nul
     response,
     error,
     text: response ? response.content.filter((block) => block.type === 'text').map((block) => block.text).join('') : '',
+  };
+}
+
+function toModelToolResult(result) {
+  return {
+    type: result.type,
+    tool_use_id: result.tool_use_id,
+    ...(result.is_error === true ? { is_error: true } : {}),
+    content: result.content,
   };
 }
 

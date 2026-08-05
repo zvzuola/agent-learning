@@ -1,9 +1,9 @@
 import {
   CodingAgent,
+  ConsoleEventSink,
   createClaudeRuntime,
   createProjectReader,
   createReadProjectFileTool,
-  InMemoryEventSink,
   ToolRegistry,
 } from '../src/index.js';
 
@@ -13,11 +13,10 @@ const projectReader = createProjectReader({ rootDirectory: process.cwd() });
 const tools = new ToolRegistry();
 tools.register(createReadProjectFileTool(projectReader));
 
-const events = new InMemoryEventSink();
 const agent = new CodingAgent({
   client: claude.client,
   tools,
-  eventSink: events,
+  eventSink: new ConsoleEventSink(),
   config: {
     model: claude.model,
     maxTokens: 1024,
@@ -35,9 +34,6 @@ const result = await agent.run(input);
 console.log(`status=${result.status} steps=${result.steps}`);
 console.log(`answer=${result.text}`);
 printTrajectory(result.messages);
-for (const event of events.events) {
-  console.log(`step=${event.step} event=${event.name} ${JSON.stringify(event.payload)}`);
-}
 
 function printTrajectory(messages) {
   console.log('trajectory:');

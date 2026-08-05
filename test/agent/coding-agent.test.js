@@ -82,11 +82,39 @@ test('executes a requested tool and returns its result before the next decision'
   assert.match(secondMessages[2].content[0].content, /demo-project/);
   assert.deepEqual(events.events.map(({ name }) => name), [
     'run.started',
+    'model.started',
     'model.completed',
     'tool.completed',
+    'model.started',
     'model.completed',
     'run.completed',
   ]);
+});
+
+test('emits the complete model input and output for every decision step', async () => {
+  const firstContent = [
+    { type: 'tool_use', id: 'toolu_log', name: 'read_project_file', input: { path: 'package.json' } },
+  ];
+  const finalResponse = message({ content: [{ type: 'text', text: 'Done.' }] });
+  const { agent, events } = setup([
+    message({ content: firstContent, stopReason: 'tool_use' }),
+    finalResponse,
+  ]);
+
+  await agent.run('Inspect the project');
+
+  const modelStarted = events.events.filter(({ name }) => name === 'model.started');
+  const modelCompleted = events.events.filter(({ name }) => name === 'model.completed');
+  assert.equal(modelStarted.length, 2);
+  assert.equal(modelCompleted.length, 2);
+  assert.deepEqual(modelStarted[0].payload.input.messages, [
+    { role: 'user', content: 'Inspect the project' },
+  ]);
+  assert.equal(modelStarted[0].payload.input.model, 'claude-test');
+  assert.equal(modelStarted[0].payload.input.tools[0].name, 'read_project_file');
+  assert.equal(modelStarted[1].payload.input.messages.at(-1).content[0].type, 'tool_result');
+  assert.deepEqual(modelCompleted[0].payload.output.content, firstContent);
+  assert.deepEqual(modelCompleted[1].payload.output, finalResponse);
 });
 
 test('returns validation failure to the model without calling the dependency', async () => {
@@ -160,12 +188,20 @@ test('rejects fractional runtime budgets', () => {
 });
 
 test('does not persist malformed SDK responses', async () => {
-  const { agent, checkpointStore } = setup([{ content: 'not-blocks', stop_reason: null }]);
+  const malformedResponse = { content: 'not-blocks', stop_reason: null };
+  const { agent, checkpointStore, events } = setup([malformedResponse]);
 
   const result = await agent.runThread('thread-invalid', 'Hi');
 
   assert.equal(result.status, 'invalid_response');
   assert.deepEqual(await checkpointStore.load('thread-invalid'), []);
+  assert.deepEqual(events.events.map(({ name }) => name), [
+    'run.started',
+    'model.started',
+    'model.completed',
+    'run.failed',
+  ]);
+  assert.deepEqual(events.events[2].payload.output, malformedResponse);
 });
 
 test('does not checkpoint a turn stopped by a runtime budget', async () => {
@@ -237,6 +273,49 @@ test('event sink failures do not break the run', async () => {
   const result = await agent.run('Hi');
 
   assert.equal(result.status, 'completed');
+});
+
+test('reports classified tool failures in events without leaking runtime metadata to the SDK', async () => {
+  const tools = new ToolRegistry();
+  tools.register({
+    name: 'unstable_dependency',
+    description: 'Call an unstable dependency.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    policy: { timeoutMs: 10 },
+    handler: () => new Promise(() => {}),
+  });
+  const client = new FakeAnthropicClient([
+    message({
+      stopReason: 'tool_use',
+      content: [{ type: 'tool_use', id: 'slow_1', name: 'unstable_dependency', input: {} }],
+    }),
+    (params) => {
+      const toolResult = params.messages.at(-1).content[0];
+      assert.deepEqual(Object.keys(toolResult).sort(), [
+        'content',
+        'is_error',
+        'tool_use_id',
+        'type',
+      ]);
+      assert.equal(JSON.parse(toolResult.content).error.code, 'timeout');
+      return message({ content: [{ type: 'text', text: 'The dependency timed out.' }] });
+    },
+  ]);
+  const events = new InMemoryEventSink();
+  const agent = new CodingAgent({
+    client,
+    tools,
+    eventSink: events,
+    config: { model: 'claude-test', maxTokens: 256 },
+  });
+
+  const result = await agent.run('Use the dependency');
+  const toolEvent = events.events.find(({ name }) => name === 'tool.completed');
+
+  assert.equal(result.status, 'completed');
+  assert.equal(toolEvent.payload.errorCode, 'timeout');
+  assert.equal(toolEvent.payload.retryable, true);
+  assert.equal(typeof toolEvent.payload.durationMs, 'number');
 });
 
 function hasTextBlock(messages, expected) {
